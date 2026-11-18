@@ -1,0 +1,408 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>内部看板 · 宣传部工作台</title>
+<link rel="stylesheet" href="/styles.css">
+<style>
+.gate{position:fixed;inset:0;background:rgba(27,29,33,.34);-webkit-backdrop-filter:blur(6px);backdrop-filter:blur(6px);display:grid;place-items:center;z-index:100;padding:20px;animation:fade .22s var(--ease)}
+.gate-card{
+  background:rgba(255,255,255,.86);-webkit-backdrop-filter:blur(26px) saturate(180%);backdrop-filter:blur(26px) saturate(180%);
+  border:1px solid rgba(255,255,255,.8);border-radius:18px;padding:32px;width:100%;max-width:356px;
+  box-shadow:0 2px 8px rgba(27,29,33,.08), 0 36px 70px -24px rgba(27,29,33,.45);
+  text-align:center;animation:pop .3s var(--ease) both;
+}
+.gate-card h2{margin:0 0 6px;font-size:20px;letter-spacing:-.01em}
+.gate-card p{margin:0 0 20px;color:var(--muted);font-size:13.5px;line-height:1.6}
+.gate-card input{text-align:center;letter-spacing:.2em;font-family:ui-monospace,Consolas,monospace;font-size:16px;font-weight:600}
+.gate-err{color:var(--danger);font-size:13px;margin-top:10px;min-height:18px}
+.gate-card{position:relative}
+.gate-close{position:absolute;top:11px;right:11px;width:30px;height:30px;border:0;background:transparent;color:var(--muted);font-size:19px;line-height:1;border-radius:8px;cursor:pointer;transition:background var(--fast) var(--ease),color var(--fast) var(--ease),transform var(--fast) var(--ease)}
+.gate-close:hover{background:rgba(27,29,33,.06);color:var(--ink);transform:rotate(90deg)}
+.gate-close:active{transform:rotate(90deg) scale(.92)}
+</style>
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-mark">宣</span><span class="brand-text">宣传部工作台</span></a>
+  <nav>
+    <a href="/">工作排期</a>
+    <a href="/order.html">约稿 / 合作</a>
+    <a href="/admin.html" class="active">内部看板</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="page-head">
+    <div>
+      <h1>内部看板</h1>
+      <p class="sub">收到的所有需求。认领后点"制作中"，交付后点"已交付"。<span id="count"></span></p>
+    </div>
+    <button class="btn ghost" id="refresh">↻ 刷新</button>
+  </div>
+
+  <div class="locked-bar" id="lockedBar">
+    <span>未输入管理口令，看板内容不可见。</span>
+    <button id="unlockBtn">输入口令</button>
+  </div>
+
+  <div class="ohead">
+    <div class="filter" id="tabs">
+      <button data-tab="orders" class="on">委托看板</button>
+      <button data-tab="schedule">排期管理</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="filter" id="filter">
+      <button data-f="all" class="on">全部</button>
+      <button data-f="campus">部门组织</button>
+      <button data-f="business">委托合作</button>
+      <button data-f="urgent">加急</button>
+    </div>
+  </div>
+
+  <section id="pane-schedule" style="display:none">
+    <form class="card" id="schedForm" style="margin-bottom:22px">
+      <div class="err" id="schedErr"></div>
+      <div class="row2">
+        <div class="field">
+          <label for="s_title">项目名称<span class="req">*</span></label>
+          <input type="text" id="s_title" required maxlength="60" placeholder="例：校运会全程跟拍">
+        </div>
+        <div class="field">
+          <label for="s_type">类型</label>
+          <select id="s_type">
+            <option value="推文">推文</option>
+            <option value="设计">设计</option>
+            <option value="绘画">绘画</option>
+            <option value="摄影">摄影</option>
+            <option value="视频">视频</option>
+            <option value="AI绘图">AI 绘图</option>
+            <option value="其他">其他</option>
+          </select>
+        </div>
+      </div>
+      <div class="row3">
+        <div class="field">
+          <label for="s_start">开始日期<span class="req">*</span></label>
+          <input type="date" id="s_start" required>
+        </div>
+        <div class="field">
+          <label for="s_end">结束日期</label>
+          <input type="date" id="s_end">
+          <div class="hint">留空表示只有一天</div>
+        </div>
+        <div class="field">
+          <label for="s_status">状态</label>
+          <select id="s_status">
+            <option value="制作中">制作中</option>
+            <option value="待接单">待接单</option>
+            <option value="已交付">已交付</option>
+          </select>
+        </div>
+      </div>
+      <div class="row2">
+        <div class="field">
+          <label for="s_owner">负责人</label>
+          <input type="text" id="s_owner" maxlength="30" placeholder="例：王同学">
+        </div>
+        <div class="field">
+          <label for="s_client">需求方</label>
+          <input type="text" id="s_client" maxlength="40" placeholder="例：校办 / 体育部">
+        </div>
+      </div>
+      <div class="field">
+        <label for="s_note">备注</label>
+        <input type="text" id="s_note" maxlength="80" placeholder="例：需 8:00 前到南门">
+      </div>
+      <div class="actions">
+        <button class="btn accent" type="submit" id="s_submit">添加到排期</button>
+        <button class="btn ghost" type="button" id="s_cancel" style="display:none">取消修改</button>
+        <button class="btn ghost" type="button" id="s_refresh">↻ 刷新</button>
+        <span class="note-inline" id="s_mode">新排期</span>
+      </div>
+    </form>
+    <div class="sched-list" id="schedList"></div>
+  </section>
+
+  <div class="board" id="pane-orders">
+    <div><div class="col-head"><span class="dot" style="background:#b9b5ac"></span><span class="nm">待接单</span><span class="cnt" id="c-待接单"></span></div><div id="col-待接单"></div></div>
+    <div><div class="col-head"><span class="dot" style="background:#c99a2e"></span><span class="nm">制作中</span><span class="cnt" id="c-制作中"></span></div><div id="col-制作中"></div></div>
+    <div><div class="col-head"><span class="dot" style="background:#2f7d5c"></span><span class="nm">已交付</span><span class="cnt" id="c-已交付"></span></div><div id="col-已交付"></div></div>
+    <div><div class="col-head"><span class="dot" style="background:#c98b8b"></span><span class="nm">已拒绝</span><span class="cnt" id="c-已拒绝"></span></div><div id="col-已拒绝"></div></div>
+  </div>
+</main>
+
+<div class="gate" id="gate" style="display:none">
+  <div class="gate-card">
+    <button class="gate-close" id="gateClose" aria-label="关闭口令窗口">×</button>
+    <h2>输入管理口令</h2>
+    <p>口令在服务器启动时打印，也保存在<br>data/admin-key.txt</p>
+    <input type="text" id="keyInput" placeholder="例如 3F9A1C" autocomplete="off">
+    <div class="gate-err" id="gateErr"></div>
+    <button class="btn" style="width:100%;justify-content:center;margin-top:8px" id="gateBtn">进入看板</button>
+  </div>
+</div>
+
+<script>
+const STATUSES = ["待接单","制作中","已交付","已拒绝"];
+const NEXT = { "待接单":"制作中", "制作中":"已交付" };
+const CHANNEL_LABEL = { campus: "部门", business: "委托" };
+let ORDERS = [];
+let filter = "all";
+
+const getKey = () => sessionStorage.getItem("adminKey") || "";
+function showGate(msg){
+  document.getElementById("gate").style.display = "grid";
+  document.getElementById("gateErr").textContent = msg || "";
+  setTimeout(()=>document.getElementById("keyInput").focus(), 50);
+}
+function hideGate(){ document.getElementById("gate").style.display = "none"; }
+function showLocked(){
+  document.getElementById("gate").style.display = "none";
+  document.getElementById("lockedBar").classList.add("show");
+  document.querySelector(".board").style.display = "none";
+}
+function hideLocked(){
+  document.getElementById("lockedBar").classList.remove("show");
+  document.querySelector(".board").style.display = "";
+}
+
+async function api(path, opts = {}){
+  const r = await fetch(path, {
+    ...opts,
+    headers: { ...(opts.headers || {}), "x-admin-key": getKey() },
+  });
+  if(r.status === 401){ showGate("口令不对，或还没有口令"); throw new Error("unauthorized"); }
+  return r;
+}
+
+function esc(s){ return String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function fmtTime(iso){ const d = new Date(iso); return (d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
+
+function visible(o){
+  if(filter === "urgent") return !!o.urgent;
+  if(filter === "all") return true;
+  return o.channel === filter;
+}
+
+async function load(){
+  try{
+    const r = await api("/api/orders");
+    const data = await r.json();
+    ORDERS = data.orders || [];
+    hideGate();
+    hideLocked();
+    render();
+  }catch(e){
+    if(e.message !== "unauthorized") alert("加载失败：" + e.message);
+  }
+}
+
+function card(o, st){
+  const canNext = NEXT[st];
+  const rows = [
+    ['提交', esc(o.requester) + (o.contact ? ' · ' + esc(o.contact) : '')],
+    ['期望', o.deadline ? esc(o.deadline) : '未指定'],
+    ['收到', fmtTime(o.createdAt)],
+  ];
+  if(o.company && o.company !== o.requester) rows.unshift(['客户', esc(o.company)]);
+  if(o.budget) rows.push(['预算', esc(o.budget)]);
+  if(o.location) rows.push(['地点', esc(o.location)]);
+  if(o.invoice) rows.push(['票据', esc(o.invoice)]);
+  if(o.rejectReason) rows.push(['拒接原因', esc(o.rejectReason)]);
+
+  return '<div class="ocard' + (o.urgent ? ' is-urgent' : '') + (st === "已拒绝" ? ' rejected' : '') + '">'+
+    '<div class="top">'+
+      '<span class="id">'+esc(o.id)+'</span>'+
+      (o.channel ? '<span class="chan" data-c="'+esc(o.channel)+'">'+(CHANNEL_LABEL[o.channel]||esc(o.channel))+'</span>' : '')+
+      (o.type ? '<span class="tag" data-t="'+esc(o.type)+'">'+esc(o.type)+'</span>' : '')+
+      (o.urgent ? '<span class="urgent">加急</span>' : '')+
+    '</div>'+
+    '<div class="ti">'+esc(o.title)+'</div>'+
+    rows.map(([k,v])=>'<div class="kv"><b>'+k+'</b><span>'+v+'</span></div>').join('')+
+    (o.description?'<div class="desc">'+esc(o.description).replace(/\n/g,"<br>")+'</div>':'')+
+    (o.files&&o.files.length?'<div class="files">'+o.files.map(f=>'<a href="'+f.url+'" target="_blank" title="'+esc(f.name)+'">'+esc(f.name.length>16?f.name.slice(0,14)+"…":f.name)+'</a>').join("")+'</div>':'')+
+    '<div class="ops">'+
+      (canNext?'<button class="pri" data-id="'+esc(o.id)+'" data-to="'+canNext+'">→ '+canNext+'</button>':'')+
+      (st==="待接单"?'<button data-reject="'+esc(o.id)+'">拒接</button>':'')+
+      (st!=="待接单"?'<button data-id="'+esc(o.id)+'" data-to="待接单">退回待接单</button>':'')+
+      '<button class="del" data-id="'+esc(o.id)+'">删除</button>'+
+    '</div>'+
+  '</div>';
+}
+
+function render(){
+  const shown = ORDERS.filter(visible);
+  document.getElementById("count").textContent = ORDERS.length
+    ? " 共 " + ORDERS.length + " 条" + (filter !== "all" ? "，当前显示 " + shown.length + " 条" : "")
+    : "";
+  for(const st of STATUSES){
+    const items = shown.filter(o=>o.status===st);
+    document.getElementById("c-"+st).textContent = items.length;
+    const box = document.getElementById("col-"+st);
+    if(!items.length){ box.innerHTML = '<div class="empty">' + (filter!=="all" ? "没有符合条件的" : (st==="待接单" ? "暂时没有新需求" : "暂无")) + "</div>"; continue; }
+    box.innerHTML = items.map(o => card(o, st)).join("");
+  }
+  document.querySelectorAll("[data-to]").forEach(b=>b.onclick=()=>setStatus(b.dataset.id, b.dataset.to));
+  document.querySelectorAll(".del").forEach(b=>b.onclick=()=>del(b.dataset.id));
+  document.querySelectorAll("[data-reject]").forEach(b=>b.onclick=()=>reject(b.dataset.reject));
+}
+
+async function setStatus(id, to){
+  await api("/api/orders/"+encodeURIComponent(id), { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({status:to}) });
+  load();
+}
+
+async function reject(id){
+  const reason = prompt("拒接原因（可以留空）。会记录在这张单子上，方便你回复对方：");
+  if(reason === null) return;
+  await api("/api/orders/"+encodeURIComponent(id), {
+    method:"PATCH",
+    headers:{"Content-Type":"application/json"},
+    body: JSON.stringify({ status:"已拒绝", rejectReason: reason }),
+  });
+  load();
+}
+
+async function del(id){
+  if(!confirm("确定删除需求 " + id + "？素材文件保留在 uploads/，但订单记录会消失。")) return;
+  await api("/api/orders/"+encodeURIComponent(id), { method:"DELETE" });
+  load();
+}
+
+/* ---------- 排期管理 ---------- */
+let SCHED = [];
+let editingSchedId = null;
+const S = id => document.getElementById(id);
+const fmtDay = s => { if(!s) return ""; const d = new Date(s+"T00:00:00"); return (d.getMonth()+1)+"/"+d.getDate(); };
+
+async function loadSchedule(){
+  try{
+    const data = await api("/api/schedule").then(r=>r.json());
+    SCHED = (data.items||[]).slice().sort((a,b)=>(a.start||"").localeCompare(b.start||""));
+    renderSchedule();
+  }catch(e){ if(e.message !== "unauthorized") alert("排期加载失败：" + e.message); }
+}
+
+function renderSchedule(){
+  const box = S("schedList");
+  if(!SCHED.length){ box.innerHTML = '<div class="empty">还没有排期，用上面的表单添加第一条</div>'; return; }
+  box.innerHTML = SCHED.map(o => {
+    const multi = o.start && o.end && o.end !== o.start;
+    return '<div class="sched-row">'+
+      '<span class="sched-type" data-t="'+esc(o.type||"")+'">'+esc(o.type||"—")+'</span>'+
+      '<span class="sched-title">'+esc(o.title||"")+'</span>'+
+      '<span class="sched-when">'+fmtDay(o.start)+(multi ? " → "+fmtDay(o.end) : "")+'</span>'+
+      '<span class="sched-owner">'+esc(o.owner||"")+'</span>'+
+      '<span class="pill" data-s="'+esc(o.status||"待接单")+'">'+esc(o.status||"待接单")+'</span>'+
+      (o.source==="order" ? '<span class="meta ord-mark">委托</span>' : '')+
+      '<span class="sched-ops">'+
+        (o.source==="order" ? '<span class="sched-lock">看板管控</span>' :
+          '<button data-sedit="'+esc(o.id)+'">修改</button><button class="del" data-sdel="'+esc(o.id)+'">删除</button>')+
+      '</span></div>';
+  }).join("");
+  box.querySelectorAll("[data-sedit]").forEach(b=>b.onclick=()=>startEditSchedule(b.dataset.sedit));
+  box.querySelectorAll("[data-sdel]").forEach(b=>b.onclick=()=>removeSchedule(b.dataset.sdel));
+}
+
+function startEditSchedule(id){
+  const o = SCHED.find(i=>i.id===id);
+  if(!o) return;
+  editingSchedId = id;
+  S("s_title").value = o.title || "";
+  S("s_type").value = o.type || "推文";
+  S("s_start").value = o.start || "";
+  S("s_end").value = o.end || "";
+  S("s_status").value = o.status || "制作中";
+  S("s_owner").value = o.owner || "";
+  S("s_client").value = o.client || "";
+  S("s_note").value = o.note || "";
+  S("s_mode").textContent = "正在修改 " + id;
+  S("s_submit").textContent = "保存修改";
+  S("s_cancel").style.display = "";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+}
+
+function resetScheduleForm(){
+  editingSchedId = null;
+  S("schedForm").reset();
+  S("s_mode").textContent = "新排期";
+  S("s_submit").textContent = "添加到排期";
+  S("s_cancel").style.display = "none";
+  S("schedErr").style.display = "none";
+}
+
+async function removeSchedule(id){
+  if(!confirm("确定删除排期 " + id + "？")) return;
+  await api("/api/schedule/" + encodeURIComponent(id), { method: "DELETE" });
+  loadSchedule();
+}
+
+S("schedForm").onsubmit = async (e) => {
+  e.preventDefault();
+  S("schedErr").style.display = "none";
+  const body = {
+    title: S("s_title").value.trim(),
+    type: S("s_type").value,
+    start: S("s_start").value,
+    end: S("s_end").value,
+    status: S("s_status").value,
+    owner: S("s_owner").value.trim(),
+    client: S("s_client").value.trim(),
+    note: S("s_note").value.trim(),
+  };
+  if(body.end && body.end < body.start) body.end = body.start;
+  try{
+    const r = editingSchedId
+      ? await api("/api/schedule/" + encodeURIComponent(editingSchedId), { method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) })
+      : await api("/api/schedule", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    const data = await r.json();
+    if(!r.ok) throw new Error(data.error || "保存失败");
+    resetScheduleForm();
+    loadSchedule();
+  }catch(ex){
+    if(ex.message === "unauthorized") return;
+    S("schedErr").textContent = ex.message;
+    S("schedErr").style.display = "block";
+  }
+};
+
+S("s_cancel").onclick = resetScheduleForm;
+S("s_refresh").onclick = () => loadSchedule();
+
+document.querySelectorAll("#tabs button").forEach(b=>{
+  b.onclick = ()=>{
+    const tab = b.dataset.tab;
+    document.querySelectorAll("#tabs button").forEach(x=>x.classList.toggle("on", x === b));
+    S("pane-orders").style.display = tab === "orders" ? "" : "none";
+    S("filter").style.display = tab === "orders" ? "" : "none";
+    S("pane-schedule").style.display = tab === "schedule" ? "" : "none";
+    if(tab === "schedule") loadSchedule();
+  };
+});
+
+document.getElementById("refresh").onclick = load;
+document.getElementById("gateClose").onclick = showLocked;
+document.getElementById("unlockBtn").onclick = ()=> showGate("");
+document.getElementById("gate").onclick = (e)=>{ if(e.target.id === "gate") showLocked(); };
+document.querySelectorAll("#filter button").forEach(b=>{
+  b.onclick = ()=>{
+    filter = b.dataset.f;
+    document.querySelectorAll("#filter button").forEach(x=>x.classList.toggle("on", x===b));
+    render();
+  };
+});
+document.getElementById("gateBtn").onclick = ()=>{
+  const v = document.getElementById("keyInput").value.trim();
+  if(!v) return;
+  sessionStorage.setItem("adminKey", v);
+  load();
+};
+document.getElementById("keyInput").onkeydown = (e)=>{ if(e.key === "Enter") document.getElementById("gateBtn").click(); };
+
+load();
+</script>
+</body>
+</html>

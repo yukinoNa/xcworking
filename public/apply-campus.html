@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>部门 / 学生组织需求提交 · 宣传部工作台</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-mark">宣</span><span class="brand-text">宣传部工作台</span></a>
+  <nav>
+    <a href="/">工作排期</a>
+    <a href="/order.html" class="active">约稿 / 合作</a>
+    <a href="/admin.html">内部看板</a>
+  </nav>
+</header>
+
+<main class="wrap" style="max-width:720px">
+  <div class="page-head">
+    <div>
+      <h1>部门 / 学生组织需求</h1>
+      <p class="sub">各部门、学生组织的宣传活动需求。提交后进入内部排期，我们会联系你确认细节。</p>
+    </div>
+    <a class="btn ghost" href="/order.html">← 换个入口</a>
+  </div>
+
+  <form class="card" id="form">
+    <div class="err" id="err"></div>
+
+    <div class="field">
+      <label>需要什么类型的支持<span class="req">*</span></label>
+      <div class="chips" id="typeChips"></div>
+    </div>
+
+    <div class="field">
+      <label for="title">需求标题<span class="req">*</span></label>
+      <input type="text" id="title" name="title" required maxlength="60" placeholder="例：社团招新海报设计 / 运动会开幕式跟拍">
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label for="requester">提交人 / 部门<span class="req">*</span></label>
+        <input type="text" id="requester" name="requester" required maxlength="40" placeholder="例：张老师 / 学生会文娱部">
+      </div>
+      <div class="field">
+        <label for="contact">联系方式</label>
+        <input type="text" id="contact" name="contact" maxlength="60" placeholder="微信 / 手机号 / QQ">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="deadline">期望完成日期</label>
+      <input type="date" id="deadline" name="deadline">
+      <div class="hintbox" id="cycleHint"></div>
+    </div>
+
+    <div class="field">
+      <label for="description">需求描述<span class="req">*</span></label>
+      <textarea id="description" name="description" required maxlength="1200" placeholder="用途、风格、尺寸、发布渠道、必须出现的文字/元素、参考案例……写得越具体，返工越少。"></textarea>
+    </div>
+
+    <div class="field">
+      <label>参考素材</label>
+      <label class="drop" id="drop">
+        <div class="big">点击选择文件，或把文件拖到这里</div>
+        <div class="small">logo、参考图、文案初稿等 · 单个 ≤ 25MB · 最多 6 个</div>
+        <input type="file" id="file" multiple hidden>
+      </label>
+      <ul class="filelist" id="filelist"></ul>
+    </div>
+
+    <div class="actions">
+      <button class="btn accent" type="submit" id="submit">提交需求</button>
+      <span class="note-inline">提交后会生成需求编号，请记下来方便跟进。</span>
+    </div>
+  </form>
+
+  <div class="card" id="done" style="display:none">
+    <div class="success">
+      <div class="tick">✓</div>
+      <h2>提交成功</h2>
+      <p>你的需求编号是</p>
+      <div class="bigno" id="orderId">—</div>
+      <div id="urgentNote" style="display:none;background:#fdf1e7;color:#8c5a1e;padding:10px 14px;border-radius:9px;font-size:13.5px;margin-bottom:16px">这条需求已标记为<b>加急</b>，我们会优先安排。</div>
+      <p>我们会尽快认领并联系你，你也可以在排期页看到进度。</p>
+      <div class="actions" style="justify-content:center;margin-top:8px">
+        <a class="btn ghost" href="/">查看工作排期</a>
+        <button class="btn" type="button" id="again">再提交一个</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>window.FORM_CONFIG = { channel: "campus", types: ["推文","摄影","绘画","设计","视频"] };</script>
+<script src="/apply.js"></script>
+</body>
+</html>

@@ -1,0 +1,20 @@
+# 依赖
+node_modules/
+package-lock.json.bak
+
+# 运行时数据：含真实客户姓名、电话与上传素材，不要提交
+data/admin-key.txt
+data/orders.json
+data/schedule.json
+data/schedule.xlsx
+uploads/
+
+# 临时文件
+public/_*.html
+*.log
+.DS_Store
+Thumbs.db
+
+# 编辑器
+.vscode/
+.idea/

@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>约稿 / 合作 · 宣传部工作台</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-mark">宣</span><span class="brand-text">宣传部工作台</span></a>
+  <nav>
+    <a href="/">工作排期</a>
+    <a href="/order.html" class="active">约稿 / 合作</a>
+    <a href="/admin.html">内部看板</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="page-head">
+    <div>
+      <h1>约稿 / 合作</h1>
+      <p class="sub">欢迎联系我们。两种方式都能发起需求，选更贴近你情况的那一类就行，剩下的交给我们。</p>
+    </div>
+  </div>
+
+  <div class="pick">
+    <a class="pick-card campus" href="/apply-campus.html">
+      <h2>部门 / 学生组织</h2>
+      <p>各部门、学生组织的宣传活动需求，按排期承接。</p>
+      <ul>
+        <li>公众号推文、摄影跟拍、海报设计、绘画插画</li>
+        <li>进入内部排期，按提交顺序制作</li>
+        <li>提交后我们会联系你确认细节</li>
+      </ul>
+      <span class="go">提交需求 →</span>
+    </a>
+
+    <a class="pick-card biz" href="/apply-business.html">
+      <h2>委托 / 商业合作</h2>
+      <p>摄影、剪辑、设计等委托项目，需求确认后安排制作。</p>
+      <ul>
+        <li>可承接拍摄、视频剪辑、设计与 AI 绘图、外包制作</li>
+        <li>提交后我们会联系你确认需求与方案</li>
+        <li>按项目确认交付时间与形式</li>
+      </ul>
+      <span class="go">提交委托意向 →</span>
+    </a>
+  </div>
+
+  <h2 style="font-size:19px;letter-spacing:-.01em;margin:44px 0 6px">制作周期</h2>
+  <p class="sub" style="margin-bottom:16px">从需求确认起算。急着要的话仍然可以提交，系统会标记为加急。</p>
+  <div class="cycles" id="cycles"><div class="cycle-note">正在读取…</div></div>
+</main>
+
+<script>
+fetch("/api/cycles").then(r=>r.json()).then(d=>{
+  const items = d.items || [];
+  if(!items.length){ document.getElementById("cycles").innerHTML = '<div class="cycle-note">暂未配置制作周期</div>'; return; }
+  document.getElementById("cycles").innerHTML = items.map(i =>
+    '<div class="cycle-row"><span class="nm">'+i.label+'</span>'+
+    (i.days ? '<span class="days">'+i.text+'</span>' : '<span class="days nego">'+i.text+'</span>')+
+    '</div>'
+  ).join("") + '<div class="cycle-note">'+(d.note||"")+'</div>';
+}).catch(()=>{ document.getElementById("cycles").innerHTML = '<div class="cycle-note">读取失败</div>'; });
+</script>
+</body>
+</html>

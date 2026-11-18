@@ -1,0 +1,355 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>工作排期 · 宣传部工作台</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-mark">宣</span><span class="brand-text">宣传部工作台</span></a>
+  <nav>
+    <a href="/" class="active">工作排期</a>
+    <a href="/order.html">约稿 / 合作</a>
+    <a href="/admin.html">内部看板</a>
+  </nav>
+</header>
+
+<main class="wrap">
+  <div class="page-head">
+    <div>
+      <h1>工作排期</h1>
+      <p class="sub" id="updated">正在读取排期…</p>
+    </div>
+    <a class="btn accent" href="/order.html">委托入口</a>
+  </div>
+
+  <section class="stats">
+    <div class="stat"><div class="k">本月任务</div><div class="v" id="s-total">–</div></div>
+    <div class="stat"><div class="k">制作中</div><div class="v" id="s-working">–</div></div>
+    <div class="stat"><div class="k">已交付</div><div class="v" id="s-done">–</div></div>
+    <div class="stat"><div class="k">可接单天数</div><div class="v" id="s-free">–<small>天</small></div></div>
+  </section>
+
+  <div class="toolbar">
+    <div class="seg">
+      <button id="v-week" class="on">周</button>
+      <button id="v-cal">月历</button>
+      <button id="v-list">列表</button>
+    </div>
+    <div class="spacer"></div>
+    <div class="month-nav">
+      <button id="prev" title="上一页">‹</button>
+      <span class="month-label" id="mlabel">—</span>
+      <button id="next" title="下一页">›</button>
+      <button id="today" title="回到今天" style="width:auto;padding:0 11px;font-size:12.5px">今天</button>
+    </div>
+  </div>
+
+  <div id="week-wrap"><div class="week" id="week"></div></div>
+
+  <div id="cal-wrap" style="display:none">
+    <div class="cal">
+      <div class="cal-dow"><div>一</div><div>二</div><div>三</div><div>四</div><div>五</div><div>六</div><div>日</div></div>
+      <div class="cal-grid" id="grid"></div>
+    </div>
+  </div>
+
+  <div id="list-wrap" style="display:none"><div class="list" id="list"></div></div>
+
+  <h2 style="font-size:19px;letter-spacing:-.01em;margin:44px 0 6px">制作周期</h2>
+  <p class="sub" style="margin-bottom:16px">从需求确认起算。急着要也可以提交，会被标记为加急。</p>
+  <div class="cycles" id="cycles"><div class="cycle-note">正在读取…</div></div>
+</main>
+
+<div id="tip" class="tip" role="tooltip"></div>
+
+<script>
+const LANES = ["推文","设计","绘画","摄影","视频","AI绘图","其他"];
+const DOW = ["周日","周一","周二","周三","周四","周五","周六"];
+let ALL = [];
+let cursor = new Date();          // 周视图的锚点日 / 月视图的锚点月
+let view = "week";
+
+function ymd(d){ return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0"); }
+function esc(s){ return String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
+function laneOf(o){ return LANES.includes(o.type) ? o.type : "其他"; }
+function covers(o, key){ const s=o.start||"", e=o.end||o.start||""; return s && key >= s && key <= (e||s); }
+function dayCount(o){ const e=o.end||o.start; const a=new Date((o.start||"")+"T00:00:00"), b=new Date(e+"T00:00:00"); if(isNaN(a)||isNaN(b)) return 1; const n=Math.round((b-a)/86400000)+1; return n>0?n:1; }
+/* 委托还没接单的不对外展示 */
+function visible(o){ return !(o.source === "order" && o.status === "待接单"); }
+
+function mondayOf(d){
+  const t = new Date(d.getFullYear(), d.getMonth(), d.getDate());
+  const dow = t.getDay();
+  t.setDate(t.getDate() + (dow === 0 ? -6 : 1 - dow));
+  return t;
+}
+function cnDate(s){ if(!s) return "—"; const d = new Date(s+"T00:00:00"); return isNaN(d) ? s : (d.getMonth()+1)+"月"+d.getDate()+"日"; }
+
+async function load(){
+  try{
+    const data = await fetch("/api/schedule").then(r=>r.json());
+    if(data.error) throw new Error(data.error);
+    ALL = (data.items||[]).filter(o => o.start);
+    document.getElementById("updated").textContent = ALL.length
+      ? "共 " + ALL.filter(visible).length + " 项排期 · 更新于 " + new Date(data.updatedAt).toLocaleString("zh-CN")
+      : "还没有排期。到内部看板添加，或接单后自动出现。";
+    render();
+  }catch(e){
+    document.getElementById("updated").textContent = "读取排期失败：" + e.message;
+  }
+}
+
+function render(){
+  renderStats();
+  if(view === "week") renderWeek();
+  else if(view === "cal") renderCal();
+  else renderList();
+}
+
+function renderStats(){
+  const y = cursor.getFullYear(), m = cursor.getMonth();
+  const days = new Date(y, m+1, 0).getDate();
+  const keys = [];
+  for(let d=1; d<=days; d++) keys.push(ymd(new Date(y,m,d)));
+  const shown = ALL.filter(visible);
+  const inMonth = shown.filter(o => keys.some(k => covers(o,k)));
+  const working = shown.filter(o => o.status==="制作中" && keys.some(k=>covers(o,k))).length;
+  const done = shown.filter(o => o.status==="已交付" && keys.some(k=>covers(o,k))).length;
+  const todayKey = ymd(new Date());
+  let free = 0;
+  for(const k of keys){ if(k < todayKey) continue; if(!shown.some(o => covers(o,k))) free++; }
+  document.getElementById("s-total").textContent = inMonth.length;
+  document.getElementById("s-working").textContent = working;
+  document.getElementById("s-done").textContent = done;
+  document.getElementById("s-free").innerHTML = free + "<small>天</small>";
+}
+
+/* ---------- 周视图：跨天任务连成一条 ---------- */
+function colRange(o, keys){
+  const s = o.start, e = o.end || o.start;
+  if(e < keys[0] || s > keys[6]) return null;
+  const from = s < keys[0] ? keys[0] : s;
+  const to = e > keys[6] ? keys[6] : e;
+  const c1 = keys.indexOf(from), c2 = keys.indexOf(to);
+  if(c1 < 0 || c2 < 0) return null;
+  return { c1, c2 };
+}
+
+function renderWeek(){
+  const start = mondayOf(cursor);
+  const days = [];
+  for(let i=0;i<7;i++){ const d = new Date(start); d.setDate(d.getDate()+i); days.push(d); }
+  const keys = days.map(ymd);
+  const todayKey = ymd(new Date());
+  document.getElementById("mlabel").textContent = cnDate(keys[0]) + " – " + cnDate(keys[6]);
+
+  let html = '<div class="wk-row wk-head"><div class="wk-type"></div><div class="wk-track" style="grid-template-rows:44px">';
+  for(let i=0;i<7;i++){
+    const d = days[i], k = keys[i];
+    html += '<div class="wk-day'+(k===todayKey?' today':'')+'" style="grid-column:'+(i+1)+';grid-row:1">'+
+      '<b>'+d.getDate()+'</b><span>'+DOW[d.getDay()].replace("周","")+'</span></div>';
+  }
+  html += '</div></div>';
+
+  const shown = ALL.filter(visible);
+  let rows = "";
+  for(const lane of LANES){
+    const placed = shown.filter(o => laneOf(o) === lane).map(o => {
+      const r = colRange(o, keys);
+      return r ? { o, ...r } : null;
+    }).filter(Boolean);
+    if(!placed.length) continue;
+
+    placed.sort((a,b) => a.c1 - b.c1 || (b.c2 - a.c2));
+    const rowEnds = [];
+    for(const p of placed){
+      let row = rowEnds.findIndex(end => end < p.c1);
+      if(row === -1){ row = rowEnds.length; rowEnds.push(p.c2); }
+      else rowEnds[row] = p.c2;
+      p.row = row;
+    }
+    const rowCount = rowEnds.length;
+
+    rows += '<div class="wk-row"><div class="wk-type" data-t="'+esc(lane)+'">'+esc(lane)+'</div>';
+    rows += '<div class="wk-track" style="grid-template-rows:repeat('+rowCount+',32px)">';
+    for(let i=0;i<7;i++) rows += '<div class="wk-col'+(keys[i]===todayKey?' today':'')+'" style="grid-column:'+(i+1)+';grid-row:1/-1"></div>';
+    for(const p of placed){
+      const c = ["bar"];
+      if(p.o.status==="已交付") c.push("done");
+      if(p.o.source==="order") c.push("ord");
+      const multi = (p.c2 > p.c1);
+      rows += '<div class="'+c.join(" ")+'" data-id="'+esc(p.o.id)+'" data-t="'+esc(p.o.type||"")+'" '+
+        'style="grid-column:'+(p.c1+1)+'/'+(p.c2+2)+';grid-row:'+(p.row+1)+'" title="'+esc(p.o.title||"")+'">'+
+        esc(p.o.title||"")+(multi ? ' <i>'+dayCount(p.o)+'天</i>' : '')+'</div>';
+    }
+    rows += '</div></div>';
+  }
+
+  document.getElementById("week").innerHTML = html + (rows || '<div class="wk-empty">这一周没有排期</div>');
+}
+
+/* ---------- 月历：只显示有安排的格子 ---------- */
+function renderCal(){
+  const grid = document.getElementById("grid");
+  const y=cursor.getFullYear(), m=cursor.getMonth();
+  document.getElementById("mlabel").textContent = y + " 年 " + (m+1) + " 月";
+  const first = new Date(y,m,1);
+  let lead = first.getDay(); lead = lead===0 ? 6 : lead-1;
+  const days = new Date(y,m+1,0).getDate();
+  const todayKey = ymd(new Date());
+  const shown = ALL.filter(visible);
+  let html = "";
+
+  for(let i=0;i<lead;i++) html += '<div class="cell blank"></div>';
+  for(let d=1; d<=days; d++){
+    const cur = new Date(y,m,d);
+    const key = ymd(cur);
+    const dow = cur.getDay();
+    const cls = ["cell"];
+    if(dow===0||dow===6) cls.push("wknd");
+    if(key===todayKey) cls.push("today");
+    const todays = shown.filter(o => covers(o, key)).sort((a,b)=>LANES.indexOf(laneOf(a))-LANES.indexOf(laneOf(b)));
+    html += '<div class="'+cls.join(" ")+'"><div class="d">'+d+'</div>';
+    html += todays.map(o => {
+      const c = ["chip"];
+      if(o.status==="已交付") c.push("done");
+      if(o.source==="order") c.push("ord");
+      if(dayCount(o) > 1) c.push("span");
+      return '<span class="'+c.join(" ")+'" data-id="'+esc(o.id)+'" data-t="'+esc(o.type||"")+'">'+esc(o.title||"")+'</span>';
+    }).join("");
+    html += '</div>';
+  }
+  const total = lead + days;
+  const tail = (7 - total%7)%7;
+  for(let i=0;i<tail;i++) html += '<div class="cell blank"></div>';
+  grid.innerHTML = html;
+}
+
+/* ---------- 列表 ---------- */
+function renderList(){
+  const y=cursor.getFullYear(), m=cursor.getMonth();
+  document.getElementById("mlabel").textContent = y + " 年 " + (m+1) + " 月";
+  const prefix = y+"-"+String(m+1).padStart(2,"0");
+  const shown = ALL.filter(visible).filter(o => {
+    const s = o.start || "", e = o.end || s;
+    return (s && s.slice(0,7) === prefix) || (e && e.slice(0,7) === prefix) ||
+           (s && e && s <= prefix+"-31" && e >= prefix+"-01");
+  }).sort((a,b)=> (a.start||"").localeCompare(b.start||""));
+
+  const list = document.getElementById("list");
+  if(!shown.length){ list.innerHTML = '<div class="empty" style="margin:0;border:0;padding:60px">这个月还没有排期</div>'; return; }
+
+  const groups = new Map();
+  for(const o of shown){ const k = o.start || ""; if(!groups.has(k)) groups.set(k, []); groups.get(k).push(o); }
+
+  let html = "";
+  for(const [k, items] of groups){
+    const d = new Date(k+"T00:00:00");
+    html += '<div class="day-row"><div class="day-cell"><div class="dd">'+(d.getMonth()+1)+' 月 '+d.getDate()+' 日</div><div class="dw">'+DOW[d.getDay()]+'</div></div><div class="items">';
+    html += items.map(o =>
+      '<div class="item"><span class="tag" data-t="'+esc(o.type||"")+'">'+esc(o.type||"—")+'</span>'+
+      '<span class="t" data-id="'+esc(o.id)+'">'+esc(o.title||"")+'</span>'+
+      (dayCount(o)>1 ? '<span class="meta">'+dayCount(o)+' 天</span>' : '')+
+      (o.source==="order" ? '<span class="meta ord-mark">委托</span>' : (o.owner?'<span class="meta">'+esc(o.owner)+'</span>':''))+
+      '<span class="pill" data-s="'+esc(o.status||"待接单")+'">'+esc(o.status||"待接单")+'</span></div>'
+    ).join("");
+    html += "</div></div>";
+  }
+  list.innerHTML = html;
+}
+
+/* ---------- 悬浮信息卡 ---------- */
+const tip = document.getElementById("tip");
+let tipItem = null;
+
+function tipHtml(o){
+  const n = dayCount(o);
+  const range = n > 1 ? cnDate(o.start) + " → " + cnDate(o.end || o.start) + "　共 " + n + " 天" : cnDate(o.start);
+  const rows = [["时间", range], ["负责人", o.owner || "—"], ["需求方", o.client || "—"]];
+  if(o.note) rows.push(["备注", o.note]);
+  rows.push(["来源", o.source === "order" ? "内部看板接单" : (o.source === "import" ? "早期表格导入" : "手动添加")]);
+  return '<div class="tip-title">' + esc(o.title || "（未命名）") + '</div>' +
+    '<div class="tip-tags">' +
+      (o.type ? '<span class="tag" data-t="' + esc(o.type) + '">' + esc(o.type) + '</span>' : '') +
+      '<span class="pill" data-s="' + esc(o.status || "待接单") + '">' + esc(o.status || "待接单") + '</span>' +
+      (o.note && o.note.indexOf("加急") >= 0 ? '<span class="urgent">加急</span>' : '') +
+    '</div>' +
+    '<dl class="tip-kv">' + rows.map(([k,v]) => '<dt>' + k + '</dt><dd>' + esc(v) + '</dd>').join("") + '</dl>';
+}
+
+function placeTip(x, y){
+  const pad = 14, r = tip.getBoundingClientRect();
+  let left = x + pad, top = y + pad;
+  if(left + r.width > window.innerWidth - 10) left = x - r.width - pad;
+  if(top + r.height > window.innerHeight - 10) top = y - r.height - pad;
+  tip.style.left = Math.max(8, left) + "px";
+  tip.style.top = Math.max(8, top) + "px";
+}
+function showTip(id, x, y){
+  const o = ALL.find(i => i.id === id); if(!o) return;
+  tipItem = id; tip.innerHTML = tipHtml(o); tip.classList.add("show");
+  tip.style.left = "-9999px"; tip.style.top = "-9999px";
+  requestAnimationFrame(()=> placeTip(x, y));
+}
+function hideTip(){ tipItem = null; tip.classList.remove("show"); }
+
+function bindTip(el){
+  el.addEventListener("mouseover", e => {
+    const t = e.target.closest("[data-id]");
+    if(t) showTip(t.dataset.id, e.clientX, e.clientY);
+  });
+  el.addEventListener("mousemove", e => { if(tipItem) placeTip(e.clientX, e.clientY); });
+  el.addEventListener("mouseout", e => { if(e.target.closest("[data-id]")) hideTip(); });
+  el.addEventListener("scroll", hideTip, true);
+}
+bindTip(document.getElementById("week"));
+bindTip(document.getElementById("grid"));
+bindTip(document.getElementById("list"));
+
+/* ---------- 视图切换 ---------- */
+function syncView(){
+  document.getElementById("v-week").classList.toggle("on", view === "week");
+  document.getElementById("v-cal").classList.toggle("on", view === "cal");
+  document.getElementById("v-list").classList.toggle("on", view === "list");
+  document.getElementById("week-wrap").style.display = view === "week" ? "" : "none";
+  document.getElementById("cal-wrap").style.display = view === "cal" ? "" : "none";
+  document.getElementById("list-wrap").style.display = view === "list" ? "" : "none";
+  render();
+}
+
+document.getElementById("v-week").onclick = ()=>{ view = "week"; syncView(); };
+document.getElementById("v-cal").onclick = ()=>{ view = "cal"; syncView(); };
+document.getElementById("v-list").onclick = ()=>{ view = "list"; syncView(); };
+
+document.getElementById("prev").onclick = ()=>{
+  if(view === "week"){ cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()-7); }
+  else { cursor = new Date(cursor.getFullYear(), cursor.getMonth()-1, 1); }
+  render();
+};
+document.getElementById("next").onclick = ()=>{
+  if(view === "week"){ cursor = new Date(cursor.getFullYear(), cursor.getMonth(), cursor.getDate()+7); }
+  else { cursor = new Date(cursor.getFullYear(), cursor.getMonth()+1, 1); }
+  render();
+};
+document.getElementById("today").onclick = ()=>{ cursor = new Date(); render(); };
+
+if (window.matchMedia("(max-width:640px)").matches) view = "list";
+syncView();
+load();
+
+fetch("/api/cycles").then(r=>r.json()).then(d=>{
+  const items = d.items || [];
+  if(!items.length){ document.getElementById("cycles").innerHTML = '<div class="cycle-note">暂未配置制作周期</div>'; return; }
+  document.getElementById("cycles").innerHTML = items.map(i =>
+    '<div class="cycle-row"><span class="nm">'+esc(i.label)+'</span>'+
+    (i.days ? '<span class="days">'+esc(i.text)+'</span>' : '<span class="days nego">'+esc(i.text)+'</span>')+
+    '</div>'
+  ).join("") + '<div class="cycle-note">'+esc(d.note||"")+'</div>';
+}).catch(()=>{ document.getElementById("cycles").innerHTML = '<div class="cycle-note">读取失败</div>'; });
+</script>
+</body>
+</html>

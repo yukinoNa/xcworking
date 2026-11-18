@@ -1,0 +1,128 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>委托 / 商业合作 · 宣传部工作台</title>
+<link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+
+<header class="topbar">
+  <a class="brand" href="/"><span class="brand-mark">宣</span><span class="brand-text">宣传部工作台</span></a>
+  <nav>
+    <a href="/">工作排期</a>
+    <a href="/order.html" class="active">约稿 / 合作</a>
+    <a href="/admin.html">内部看板</a>
+  </nav>
+</header>
+
+<main class="wrap" style="max-width:720px">
+  <div class="page-head">
+    <div>
+      <h1>委托 / 商业合作</h1>
+      <p class="sub">摄影、剪辑、设计及外包项目。提交后我们会联系你确认需求与方案。</p>
+    </div>
+    <a class="btn ghost" href="/order.html">← 换个入口</a>
+  </div>
+
+  <form class="card" id="form">
+    <div class="err" id="err"></div>
+
+    <div class="field">
+      <label>需要什么服务<span class="req">*</span></label>
+      <div class="chips" id="typeChips"></div>
+    </div>
+
+    <div class="field">
+      <label for="title">需求标题<span class="req">*</span></label>
+      <input type="text" id="title" name="title" required maxlength="60" placeholder="例：婚礼跟拍 / 品牌宣传片剪辑 / 门店开业海报">
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label for="company">客户名称<span class="req">*</span></label>
+        <input type="text" id="company" name="company" required maxlength="60" placeholder="公司 / 单位 / 个人姓名">
+      </div>
+      <div class="field">
+        <label for="requester">联系人<span class="req">*</span></label>
+        <input type="text" id="requester" name="requester" required maxlength="40" placeholder="对接人姓名">
+      </div>
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label for="contact">联系方式<span class="req">*</span></label>
+        <input type="text" id="contact" name="contact" required maxlength="60" placeholder="手机号 / 微信">
+      </div>
+      <div class="field">
+        <label for="location">服务地点</label>
+        <input type="text" id="location" name="location" maxlength="60" placeholder="例：市区 / 校内 / 线上交付">
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="deadline">期望完成日期</label>
+      <input type="date" id="deadline" name="deadline">
+      <div class="hintbox" id="cycleHint"></div>
+    </div>
+
+    <div class="row2">
+      <div class="field">
+        <label for="budget">预算范围</label>
+        <input type="text" id="budget" name="budget" maxlength="40" placeholder="例：2000–3000 元 / 待报价">
+        <div class="hint">方便我们判断方案规模；不太确定可以留空，先谈需求。</div>
+      </div>
+      <div class="field">
+        <label for="invoice">票据需求</label>
+        <select id="invoice" name="invoice">
+          <option value="">暂不确定</option>
+          <option value="需要发票">需要发票</option>
+          <option value="需要合同">需要合同</option>
+          <option value="发票和合同都要">发票和合同都要</option>
+          <option value="都不需要">都不需要</option>
+        </select>
+      </div>
+    </div>
+
+    <div class="field">
+      <label for="description">需求描述<span class="req">*</span></label>
+      <textarea id="description" name="description" required maxlength="1200" placeholder="拍摄/制作内容、时长或数量、成片要求、交付格式、使用场景、参考案例……"></textarea>
+    </div>
+
+    <div class="field">
+      <label>参考素材</label>
+      <label class="drop" id="drop">
+        <div class="big">点击选择文件，或把文件拖到这里</div>
+        <div class="small">参考图、脚本、素材等 · 单个 ≤ 25MB · 最多 6 个</div>
+        <input type="file" id="file" multiple hidden>
+      </label>
+      <ul class="filelist" id="filelist"></ul>
+    </div>
+
+    <div class="actions">
+      <button class="btn accent" type="submit" id="submit">提交委托</button>
+      <span class="note-inline">提交后我们会联系你确认细节与方案。</span>
+    </div>
+  </form>
+
+  <div class="card" id="done" style="display:none">
+    <div class="success">
+      <div class="tick">✓</div>
+      <h2>委托已提交</h2>
+      <p>你的需求编号是</p>
+      <div class="bigno" id="orderId">—</div>
+      <div id="urgentNote" style="display:none;background:#fdf1e7;color:#8c5a1e;padding:10px 14px;border-radius:9px;font-size:13.5px;margin-bottom:16px">这条需求已标记为<b>加急</b>，我们会优先联系你。</div>
+      <p>我们会尽快联系你确认需求与方案。</p>
+      <div class="actions" style="justify-content:center;margin-top:8px">
+        <a class="btn ghost" href="/">查看工作排期</a>
+        <button class="btn" type="button" id="again">再提交一个</button>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>window.FORM_CONFIG = { channel: "business", types: ["摄影","视频","设计","绘画","AI绘图","其他"] };</script>
+<script src="/apply.js"></script>
+</body>
+</html>
