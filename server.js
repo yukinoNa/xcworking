@@ -28,13 +28,28 @@ const ADMIN_KEY = (() => {
   return key;
 })();
 
+const authFails = new Map();
+const MAX_FAILS = 8;
+const LOCK_MS = 15 * 60 * 1000;
+
 function requireAdmin(req, res, next) {
+  const ip = req.ip || "unknown";
+  const rec = authFails.get(ip);
+  if (rec && rec.until > Date.now()) {
+    return res.status(429).json({ error: "尝试次数过多，请 15 分钟后再试。" });
+  }
   const given = req.get("x-admin-key") || "";
-  if (given && given === ADMIN_KEY) return next();
+  if (given && given === ADMIN_KEY) {
+    authFails.delete(ip);
+    return next();
+  }
+  const count = (rec?.count || 0) + 1;
+  authFails.set(ip, { count, until: count >= MAX_FAILS ? Date.now() + LOCK_MS : 0 });
   res.status(401).json({ error: "需要管理口令" });
 }
 
 const app = express();
+app.set("trust proxy", true);
 app.use(express.json({ limit: "1mb" }));
 
 /* ---------- 订单数据层 ---------- */
