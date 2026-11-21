@@ -4,6 +4,8 @@ package-lock.json.bak
 
 # 运行时数据：含真实客户姓名、电话与上传素材，不要提交
 data/admin-key.txt
+data/users.json
+data/session-secret.txt
 data/orders.json
 data/schedule.json
 data/schedule.xlsx

@@ -1,10 +1,26 @@
-import fs from "node:fs";
+import { execFileSync } from "node:child_process";
 
 const BASE = "http://localhost:5173";
-const KEY = fs.readFileSync("data/admin-key.txt", "utf8").trim();
-const auth = { "x-admin-key": KEY };
 let pass = 0, fail = 0;
 const created = [];
+
+/* 测试用管理员账号：不存在就建，已存在就确保启用 */
+const TEST_USER = "e2e_tester";
+const TEST_PASS = "E2e@Test2026";
+const silence = { stdio: "ignore" };
+try { execFileSync("node", ["scripts/user.js", "add", TEST_USER, TEST_PASS, "admin"], silence); } catch {}
+try { execFileSync("node", ["scripts/user.js", "enable", TEST_USER], silence); } catch {}
+
+const loginRes = await fetch(BASE + "/api/auth/login", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ username: TEST_USER, password: TEST_PASS }),
+});
+if (!loginRes.ok) {
+  console.error("测试账号登录失败（" + loginRes.status + "），请先执行 node scripts/user.js add " + TEST_USER + " " + TEST_PASS + " admin");
+  process.exit(1);
+}
+const auth = { cookie: (loginRes.headers.get("set-cookie") || "").split(";")[0] };
 
 function check(name, cond, detail = "") {
   if (cond) { pass++; console.log("  ✓ " + name); }
@@ -42,10 +58,18 @@ for (const p of ["/", "/order.html", "/apply-campus.html", "/apply-business.html
   check(p + " → 200", r.status === 200, "status=" + r.status);
 }
 
-console.log("\n[3] 看板鉴权");
-check("无口令 → 401", (await fetch(BASE + "/api/orders")).status === 401);
-check("错口令 → 401", (await fetch(BASE + "/api/orders", { headers: { "x-admin-key": "WRONG" } })).status === 401);
-check("正确口令 → 200", (await fetch(BASE + "/api/orders", { headers: auth })).status === 200);
+console.log("\n[3] 登录鉴权");
+check("未登录读订单 → 401", (await fetch(BASE + "/api/orders")).status === 401);
+check("伪造会话 → 401", (await fetch(BASE + "/api/orders", { headers: { cookie: "pubhub_session=forged.sig" } })).status === 401);
+check("登录后读订单 → 200", (await fetch(BASE + "/api/orders", { headers: auth })).status === 200);
+const meRes = await fetch(BASE + "/api/auth/me", { headers: auth }).then(r => r.json());
+check("/api/auth/me 返回本人", meRes.user?.username === TEST_USER, JSON.stringify(meRes).slice(0, 80));
+const badLogin = await fetch(BASE + "/api/auth/login", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ username: TEST_USER, password: "wrong-password" }),
+});
+check("错误密码 → 401", badLogin.status === 401, "status=" + badLogin.status);
+check("登录页可访问", (await fetch(BASE + "/login.html")).status === 200);
 
 console.log("\n[4] 渠道校验");
 const noChan = await submit({ title: "x", requester: "y" });
@@ -95,6 +119,32 @@ check("待接单 → 制作中", p1.order?.status === "制作中");
 const bad = await fetch(BASE + "/api/orders/" + campus.json.order.id, { method: "PATCH", headers: { ...auth, "Content-Type": "application/json" }, body: JSON.stringify({ status: "瞎写" }) });
 check("非法状态 → 400", bad.status === 400);
 
+console.log("\n[8b] 成员权限隔离");
+const MEMBER_USER = "e2e_member";
+const MEMBER_PASS = "Member@2026";
+try { execFileSync("node", ["scripts/user.js", "add", MEMBER_USER, MEMBER_PASS, "member"], silence); } catch {}
+try { execFileSync("node", ["scripts/user.js", "enable", MEMBER_USER], silence); } catch {}
+const mLogin = await fetch(BASE + "/api/auth/login", {
+  method: "POST", headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ username: MEMBER_USER, password: MEMBER_PASS }),
+});
+const memberAuth = { cookie: (mLogin.headers.get("set-cookie") || "").split(";")[0] };
+check("成员登录成功", mLogin.ok, "status=" + mLogin.status);
+check("成员可读订单", (await fetch(BASE + "/api/orders", { headers: memberAuth })).status === 200);
+check("成员可读排期", (await fetch(BASE + "/api/schedule", { headers: memberAuth })).status === 200);
+check("成员不能读账号列表", (await fetch(BASE + "/api/users", { headers: memberAuth })).status === 403);
+check("成员不能创建账号", (await fetch(BASE + "/api/users", {
+  method: "POST", headers: { ...memberAuth, "Content-Type": "application/json" },
+  body: JSON.stringify({ username: "hacker", password: "123456" }),
+})).status === 403);
+check("成员不能删除订单", (await fetch(BASE + "/api/orders/" + campus.json.order.id, { method: "DELETE", headers: memberAuth })).status === 403);
+check("成员可修改订单状态", (await fetch(BASE + "/api/orders/" + campus.json.order.id, {
+  method: "PATCH", headers: { ...memberAuth, "Content-Type": "application/json" },
+  body: JSON.stringify({ status: "制作中" }),
+})).status === 200);
+const allUsers = await fetch(BASE + "/api/users", { headers: auth }).then(r => r.json());
+check("账号列表不含明文密码", !JSON.stringify(allUsers).includes('"hash"') && !JSON.stringify(allUsers).includes('"salt"'));
+
 console.log("\n[9] 拒接");
 const rej = await fetch(BASE + "/api/orders/" + biz.json.order.id, {
   method: "PATCH",
@@ -137,7 +187,7 @@ const badSched = await fetch(BASE + "/api/schedule/" + made.item.id, {
   body: JSON.stringify({ status: "瞎写" }),
 });
 check("非法排期状态 → 400", badSched.status === 400);
-check("无口令不能建排期", (await fetch(BASE + "/api/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "x", start: dayStr(1) }) })).status === 401);
+check("未登录不能建排期", (await fetch(BASE + "/api/schedule", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ title: "x", start: dayStr(1) }) })).status === 401);
 const delSched = await fetch(BASE + "/api/schedule/" + made.item.id, { method: "DELETE", headers: auth });
 check("删除排期", delSched.status === 200);
 sched = await fetch(BASE + "/api/schedule").then(r => r.json());

@@ -21,6 +21,12 @@
 .gate-close{position:absolute;top:11px;right:11px;width:30px;height:30px;border:0;background:transparent;color:var(--muted);font-size:19px;line-height:1;border-radius:8px;cursor:pointer;transition:background var(--fast) var(--ease),color var(--fast) var(--ease),transform var(--fast) var(--ease)}
 .gate-close:hover{background:rgba(27,29,33,.06);color:var(--ink);transform:rotate(90deg)}
 .gate-close:active{transform:rotate(90deg) scale(.92)}
+.head-actions{display:flex;align-items:center;gap:12px;flex-wrap:wrap}
+.me{display:flex;align-items:center;gap:8px;font-size:13px}
+.me-name{font-weight:560}
+.me-role{font-size:11.5px;color:var(--muted);background:rgba(255,255,255,.7);border:1px solid var(--line);padding:1px 8px;border-radius:20px}
+.me button{border:1px solid var(--line-2);background:rgba(255,255,255,.8);padding:4px 11px;border-radius:var(--r-xs);font-size:12.5px;color:var(--muted);transition:all var(--fast) var(--ease)}
+.me button:hover{background:#fff;color:var(--danger);border-color:#f0cdc9}
 </style>
 </head>
 <body>
@@ -40,18 +46,22 @@
       <h1>内部看板</h1>
       <p class="sub">收到的所有需求。认领后点"制作中"，交付后点"已交付"。<span id="count"></span></p>
     </div>
-    <button class="btn ghost" id="refresh">↻ 刷新</button>
+    <div class="head-actions">
+      <div class="me" id="me"></div>
+      <button class="btn ghost" id="refresh">↻ 刷新</button>
+    </div>
   </div>
 
-  <div class="locked-bar" id="lockedBar">
-    <span>未输入管理口令，看板内容不可见。</span>
-    <button id="unlockBtn">输入口令</button>
+  <div class="locked-bar" id="pwdBar" style="display:none">
+    <span>你还在使用初始密码，建议改成只有你知道的。</span>
+    <button id="changePwdBtn">修改密码</button>
   </div>
 
   <div class="ohead">
     <div class="filter" id="tabs">
       <button data-tab="orders" class="on">委托看板</button>
       <button data-tab="schedule">排期管理</button>
+      <button data-tab="users" id="tabUsers" style="display:none">账号管理</button>
     </div>
     <div class="spacer"></div>
     <div class="filter" id="filter">
@@ -126,6 +136,38 @@
     <div class="sched-list" id="schedList"></div>
   </section>
 
+  <section id="pane-users" style="display:none">
+    <form class="card" id="userForm" style="margin-bottom:22px">
+      <div class="err" id="userErr"></div>
+      <div class="row3">
+        <div class="field">
+          <label for="u_username">用户名<span class="req">*</span></label>
+          <input type="text" id="u_username" required maxlength="24" placeholder="例：zhangsan">
+          <div class="hint">3-24 位，字母数字和 _ . -</div>
+        </div>
+        <div class="field">
+          <label for="u_name">姓名</label>
+          <input type="text" id="u_name" maxlength="20" placeholder="例：张三">
+        </div>
+        <div class="field">
+          <label for="u_role">角色</label>
+          <select id="u_role">
+            <option value="member">成员</option>
+            <option value="admin">管理员</option>
+          </select>
+        </div>
+      </div>
+      <div class="field">
+        <label for="u_password">初始密码<span class="req">*</span></label>
+        <input type="password" id="u_password" required minlength="6" placeholder="至少 6 位，发给对方后让他自己改">
+      </div>
+      <div class="actions">
+        <button class="btn accent" type="submit" id="u_submit">创建账号</button>
+      </div>
+    </form>
+    <div class="sched-list" id="userList"></div>
+  </section>
+
   <div class="board" id="pane-orders">
     <div><div class="col-head"><span class="dot" style="background:#b9b5ac"></span><span class="nm">待接单</span><span class="cnt" id="c-待接单"></span></div><div id="col-待接单"></div></div>
     <div><div class="col-head"><span class="dot" style="background:#c99a2e"></span><span class="nm">制作中</span><span class="cnt" id="c-制作中"></span></div><div id="col-制作中"></div></div>
@@ -134,14 +176,16 @@
   </div>
 </main>
 
-<div class="gate" id="gate" style="display:none">
+<!-- 修改密码浮层 -->
+<div class="gate" id="pwdGate" style="display:none">
   <div class="gate-card">
-    <button class="gate-close" id="gateClose" aria-label="关闭口令窗口">×</button>
-    <h2>输入管理口令</h2>
-    <p>口令在服务器启动时打印，也保存在<br>data/admin-key.txt</p>
-    <input type="text" id="keyInput" placeholder="例如 3F9A1C" autocomplete="off">
-    <div class="gate-err" id="gateErr"></div>
-    <button class="btn" style="width:100%;justify-content:center;margin-top:8px" id="gateBtn">进入看板</button>
+    <button class="gate-close" id="pwdClose" aria-label="关闭">×</button>
+    <h2>修改密码</h2>
+    <p>初始密码是统一发的，改成你自己的</p>
+    <input type="password" id="oldPwd" placeholder="当前密码" autocomplete="current-password" style="letter-spacing:normal">
+    <input type="password" id="newPwd" placeholder="新密码（至少 6 位）" autocomplete="new-password" style="letter-spacing:normal;margin-top:8px">
+    <div class="gate-err" id="pwdErr"></div>
+    <button class="btn" style="width:100%;justify-content:center;margin-top:8px" id="pwdSave">保存</button>
   </div>
 </div>
 
@@ -152,31 +196,65 @@ const CHANNEL_LABEL = { campus: "部门", business: "委托" };
 let ORDERS = [];
 let filter = "all";
 
-const getKey = () => sessionStorage.getItem("adminKey") || "";
-function showGate(msg){
-  document.getElementById("gate").style.display = "grid";
-  document.getElementById("gateErr").textContent = msg || "";
-  setTimeout(()=>document.getElementById("keyInput").focus(), 50);
-}
-function hideGate(){ document.getElementById("gate").style.display = "none"; }
-function showLocked(){
-  document.getElementById("gate").style.display = "none";
-  document.getElementById("lockedBar").classList.add("show");
-  document.querySelector(".board").style.display = "none";
-}
-function hideLocked(){
-  document.getElementById("lockedBar").classList.remove("show");
-  document.querySelector(".board").style.display = "";
-}
+let ME = null;
+const toLogin = () => { location.href = "/login.html"; };
 
 async function api(path, opts = {}){
-  const r = await fetch(path, {
-    ...opts,
-    headers: { ...(opts.headers || {}), "x-admin-key": getKey() },
-  });
-  if(r.status === 401){ showGate("口令不对，或还没有口令"); throw new Error("unauthorized"); }
+  const r = await fetch(path, { ...opts, credentials: "same-origin", headers: { ...(opts.headers || {}) } });
+  if(r.status === 401){ toLogin(); throw new Error("unauthorized"); }
   return r;
 }
+
+async function loadMe(){
+  try{
+    const r = await fetch("/api/auth/me", { credentials: "same-origin" });
+    if(!r.ok){ toLogin(); return null; }
+    ME = (await r.json()).user;
+  }catch{ toLogin(); return null; }
+  renderMe();
+  return ME;
+}
+
+function renderMe(){
+  const el = document.getElementById("me");
+  if(!el || !ME) return;
+  el.innerHTML = '<span class="me-name">' + esc(ME.name) + '</span>' +
+    '<span class="me-role">' + (ME.role === "admin" ? "管理员" : "成员") + '</span>' +
+    '<button id="logoutBtn" title="退出登录">退出</button>';
+  document.getElementById("logoutBtn").onclick = async ()=>{
+    await fetch("/api/auth/logout", { method: "POST", credentials: "same-origin" });
+    toLogin();
+  };
+  if(ME.mustChangePassword) document.getElementById("pwdBar").style.display = "flex";
+  if(ME.role === "admin") document.getElementById("tabUsers").style.display = "";
+}
+
+function openPwdGate(){
+  document.getElementById("pwdGate").style.display = "grid";
+  document.getElementById("pwdErr").textContent = "";
+  document.getElementById("oldPwd").value = "";
+  document.getElementById("newPwd").value = "";
+  setTimeout(()=>document.getElementById("oldPwd").focus(), 50);
+}
+function closePwdGate(){ document.getElementById("pwdGate").style.display = "none"; }
+
+document.getElementById("pwdClose").onclick = closePwdGate;
+document.getElementById("changePwdBtn").onclick = openPwdGate;
+document.getElementById("pwdGate").onclick = (e)=>{ if(e.target.id === "pwdGate") closePwdGate(); };
+document.getElementById("pwdSave").onclick = async ()=>{
+  const err = document.getElementById("pwdErr");
+  err.textContent = "";
+  const r = await fetch("/api/auth/password", {
+    method: "POST", credentials: "same-origin",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ oldPassword: document.getElementById("oldPwd").value, newPassword: document.getElementById("newPwd").value }),
+  });
+  const data = await r.json().catch(()=>({}));
+  if(!r.ok){ err.textContent = data.error || "修改失败"; return; }
+  ME.mustChangePassword = false;
+  document.getElementById("pwdBar").style.display = "none";
+  closePwdGate();
+};
 
 function esc(s){ return String(s??"").replace(/[&<>"']/g, c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[c])); }
 function fmtTime(iso){ const d = new Date(iso); return (d.getMonth()+1)+"/"+d.getDate()+" "+String(d.getHours()).padStart(2,"0")+":"+String(d.getMinutes()).padStart(2,"0"); }
@@ -192,8 +270,6 @@ async function load(){
     const r = await api("/api/orders");
     const data = await r.json();
     ORDERS = data.orders || [];
-    hideGate();
-    hideLocked();
     render();
   }catch(e){
     if(e.message !== "unauthorized") alert("加载失败：" + e.message);
@@ -372,6 +448,96 @@ S("schedForm").onsubmit = async (e) => {
 S("s_cancel").onclick = resetScheduleForm;
 S("s_refresh").onclick = () => loadSchedule();
 
+/* ---------- 账号管理 ---------- */
+let USERS = [];
+
+async function loadUsers(){
+  try{
+    const data = await api("/api/users").then(r=>r.json());
+    USERS = data.users || [];
+    renderUsers();
+  }catch(e){ if(e.message !== "unauthorized") alert("账号加载失败：" + e.message); }
+}
+
+function renderUsers(){
+  const box = S("userList");
+  if(!USERS.length){ box.innerHTML = '<div class="empty">还没有其他账号</div>'; return; }
+  box.innerHTML = USERS.map(u => {
+    const last = u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleString("zh-CN") : "从未登录";
+    const state = u.enabled === false ? "已停用" : "正常";
+    const self = ME && ME.username === u.username;
+    return '<div class="sched-row">' +
+      '<span class="sched-title" style="flex:0 0 140px">' + esc(u.username) + '</span>' +
+      '<span class="sched-owner" style="flex:1 1 90px">' + esc(u.name || "") + '</span>' +
+      '<span class="chiptype" style="color:' + (u.role === "admin" ? "var(--accent)" : "var(--muted)") + '">' + (u.role === "admin" ? "管理员" : "成员") + '</span>' +
+      '<span class="sched-when" style="min-width:70px">' + state + '</span>' +
+      '<span class="sched-when" style="flex:1 1 130px">' + last + '</span>' +
+      '<span class="sched-ops">' +
+        '<button data-pw="' + esc(u.username) + '">重置密码</button>' +
+        (!self ? '<button data-tog="' + esc(u.username) + '">' + (u.enabled === false ? "启用" : "停用") + '</button>' : "") +
+        (!self ? '<button class="del" data-del="' + esc(u.username) + '">删除</button>' : "") +
+      '</span>' +
+    '</div>';
+  }).join("");
+  box.querySelectorAll("[data-pw]").forEach(b=>b.onclick=()=>resetUserPassword(b.dataset.pw));
+  box.querySelectorAll("[data-tog]").forEach(b=>b.onclick=()=>toggleUser(b.dataset.tog));
+  box.querySelectorAll("[data-del]").forEach(b=>b.onclick=()=>deleteUser(b.dataset.del));
+}
+
+async function resetUserPassword(username){
+  const pw = prompt("给 " + username + " 设置新密码（至少 6 位）：");
+  if(pw === null) return;
+  if(pw.length < 6) return alert("密码至少 6 位");
+  const r = await api("/api/users/" + encodeURIComponent(username), {
+    method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ password: pw }),
+  });
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok) return alert(d.error || "重置失败");
+  alert("已重置，请把新密码告诉 " + username + "，并提醒他自己改掉");
+  loadUsers();
+}
+
+async function toggleUser(username){
+  const u = USERS.find(x=>x.username===username);
+  if(!u) return;
+  const r = await api("/api/users/" + encodeURIComponent(username), {
+    method:"PATCH", headers:{"Content-Type":"application/json"}, body: JSON.stringify({ enabled: u.enabled === false }),
+  });
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok) return alert(d.error || "操作失败");
+  loadUsers();
+}
+
+async function deleteUser(username){
+  if(!confirm("确定删除账号 " + username + "？他/她将无法再登录。")) return;
+  const r = await api("/api/users/" + encodeURIComponent(username), { method:"DELETE" });
+  const d = await r.json().catch(()=>({}));
+  if(!r.ok) return alert(d.error || "删除失败");
+  loadUsers();
+}
+
+S("userForm").onsubmit = async (e) => {
+  e.preventDefault();
+  const err = S("userErr");
+  err.style.display = "none";
+  const body = {
+    username: S("u_username").value.trim(),
+    name: S("u_name").value.trim(),
+    role: S("u_role").value,
+    password: S("u_password").value,
+  };
+  try{
+    const r = await api("/api/users", { method:"POST", headers:{"Content-Type":"application/json"}, body: JSON.stringify(body) });
+    const d = await r.json().catch(()=>({}));
+    if(!r.ok) throw new Error(d.error || "创建失败");
+    S("userForm").reset();
+    loadUsers();
+  }catch(ex){
+    if(ex.message === "unauthorized") return;
+    err.textContent = ex.message;
+    err.style.display = "block";
+  }
+};
 document.querySelectorAll("#tabs button").forEach(b=>{
   b.onclick = ()=>{
     const tab = b.dataset.tab;
@@ -379,14 +545,13 @@ document.querySelectorAll("#tabs button").forEach(b=>{
     S("pane-orders").style.display = tab === "orders" ? "" : "none";
     S("filter").style.display = tab === "orders" ? "" : "none";
     S("pane-schedule").style.display = tab === "schedule" ? "" : "none";
+    S("pane-users").style.display = tab === "users" ? "" : "none";
     if(tab === "schedule") loadSchedule();
+    if(tab === "users") loadUsers();
   };
 });
 
 document.getElementById("refresh").onclick = load;
-document.getElementById("gateClose").onclick = showLocked;
-document.getElementById("unlockBtn").onclick = ()=> showGate("");
-document.getElementById("gate").onclick = (e)=>{ if(e.target.id === "gate") showLocked(); };
 document.querySelectorAll("#filter button").forEach(b=>{
   b.onclick = ()=>{
     filter = b.dataset.f;
@@ -394,15 +559,11 @@ document.querySelectorAll("#filter button").forEach(b=>{
     render();
   };
 });
-document.getElementById("gateBtn").onclick = ()=>{
-  const v = document.getElementById("keyInput").value.trim();
-  if(!v) return;
-  sessionStorage.setItem("adminKey", v);
+(async () => {
+  const me = await loadMe();
+  if (!me) return;
   load();
-};
-document.getElementById("keyInput").onkeydown = (e)=>{ if(e.key === "Enter") document.getElementById("gateBtn").click(); };
-
-load();
+})();
 </script>
 </body>
 </html>

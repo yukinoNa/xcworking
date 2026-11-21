@@ -18,34 +18,123 @@ const PORT = Number(process.env.PORT) || 5173;
 
 for (const dir of [DATA_DIR, UPLOAD_DIR]) fs.mkdirSync(dir, { recursive: true });
 
-/* 内部看板口令：环境变量优先，否则自动生成并存入 data/admin-key.txt */
-const KEY_FILE = path.join(DATA_DIR, "admin-key.txt");
-const ADMIN_KEY = (() => {
-  if (process.env.ADMIN_PASSWORD) return process.env.ADMIN_PASSWORD.trim();
-  if (fs.existsSync(KEY_FILE)) return fs.readFileSync(KEY_FILE, "utf8").trim();
-  const key = crypto.randomBytes(3).toString("hex").toUpperCase();
-  fs.writeFileSync(KEY_FILE, key, "utf8");
-  return key;
+/* ---------- 账号与会话 ---------- */
+
+const USERS_FILE = path.join(DATA_DIR, "users.json");
+const SECRET_FILE = path.join(DATA_DIR, "session-secret.txt");
+
+const SESSION_SECRET = (() => {
+  if (process.env.SESSION_SECRET) return process.env.SESSION_SECRET;
+  if (fs.existsSync(SECRET_FILE)) return fs.readFileSync(SECRET_FILE, "utf8").trim();
+  const s = crypto.randomBytes(32).toString("hex");
+  fs.writeFileSync(SECRET_FILE, s, "utf8");
+  return s;
 })();
 
-const authFails = new Map();
+const COOKIE_NAME = "pubhub_session";
+const SESSION_TTL = 7 * 24 * 3600 * 1000;
 const MAX_FAILS = 8;
 const LOCK_MS = 15 * 60 * 1000;
+const loginFails = new Map();
 
-function requireAdmin(req, res, next) {
-  const ip = req.ip || "unknown";
-  const rec = authFails.get(ip);
-  if (rec && rec.until > Date.now()) {
-    return res.status(429).json({ error: "尝试次数过多，请 15 分钟后再试。" });
+async function readUsers() {
+  try {
+    const list = JSON.parse(await fsp.readFile(USERS_FILE, "utf8"));
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
   }
-  const given = req.get("x-admin-key") || "";
-  if (given && given === ADMIN_KEY) {
-    authFails.delete(ip);
-    return next();
+}
+
+async function writeUsers(list) {
+  const tmp = USERS_FILE + ".tmp";
+  await fsp.writeFile(tmp, JSON.stringify(list, null, 2), "utf8");
+  await fsp.rename(tmp, USERS_FILE);
+}
+
+function makePasswordHash(password) {
+  const salt = crypto.randomBytes(16).toString("hex");
+  const hash = crypto.scryptSync(password, salt, 64).toString("hex");
+  return { salt, hash };
+}
+
+function checkPassword(password, user) {
+  if (!user?.salt || !user?.hash) return false;
+  const candidate = crypto.scryptSync(password, user.salt, 64);
+  const expected = Buffer.from(user.hash, "hex");
+  if (candidate.length !== expected.length) return false;
+  return crypto.timingSafeEqual(candidate, expected);
+}
+
+function publicUser(u) {
+  return {
+    username: u.username,
+    name: u.name || u.username,
+    role: u.role,
+    enabled: u.enabled !== false,
+    lastLoginAt: u.lastLoginAt || null,
+    createdAt: u.createdAt || null,
+    mustChangePassword: !!u.mustChangePassword,
+  };
+}
+
+/* 会话用签名 Cookie，服务端无状态，重启不掉线 */
+function sign(payload) {
+  return crypto.createHmac("sha256", SESSION_SECRET).update(payload).digest("base64url");
+}
+
+function issueSession(user) {
+  const payload = Buffer.from(JSON.stringify({ u: user.username, exp: Date.now() + SESSION_TTL })).toString("base64url");
+  return payload + "." + sign(payload);
+}
+
+function readSession(req) {
+  const raw = req.headers.cookie || "";
+  const m = raw.match(new RegExp("(?:^|;\\s*)" + COOKIE_NAME + "=([^;]+)"));
+  if (!m) return null;
+  const parts = m[1].split(".");
+  if (parts.length !== 2) return null;
+  const [payload, sig] = parts;
+  if (sign(payload) !== sig) return null;
+  try {
+    const data = JSON.parse(Buffer.from(payload, "base64url").toString("utf8"));
+    if (!data.u || !data.exp || data.exp < Date.now()) return null;
+    return data;
+  } catch {
+    return null;
   }
-  const count = (rec?.count || 0) + 1;
-  authFails.set(ip, { count, until: count >= MAX_FAILS ? Date.now() + LOCK_MS : 0 });
-  res.status(401).json({ error: "需要管理口令" });
+}
+
+function setSessionCookie(res, token) {
+  res.setHeader("Set-Cookie", `${COOKIE_NAME}=${token}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${Math.floor(SESSION_TTL / 1000)}`);
+}
+
+function clearSessionCookie(res) {
+  res.setHeader("Set-Cookie", `${COOKIE_NAME}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
+}
+
+async function currentUser(req) {
+  const s = readSession(req);
+  if (!s) return null;
+  const users = await readUsers();
+  const user = users.find((u) => u.username === s.u);
+  if (!user || user.enabled === false) return null;
+  return user;
+}
+
+async function requireAuth(req, res, next) {
+  const user = await currentUser(req);
+  if (!user) return res.status(401).json({ error: "请先登录" });
+  req.user = user;
+  next();
+}
+
+async function requireAdmin(req, res, next) {
+  const user = await currentUser(req);
+  if (!user) return res.status(401).json({ error: "请先登录" });
+  if (user.role !== "admin") return res.status(403).json({ error: "需要管理员权限" });
+  req.user = user;
+  next();
 }
 
 const app = express();
@@ -240,6 +329,136 @@ const upload = multer({
 
 /* ---------- API ---------- */
 
+/* ---------- 登录 / 登出 / 我的信息 ---------- */
+
+app.post("/api/auth/login", async (req, res) => {
+  const ip = req.ip || "unknown";
+  const rec = loginFails.get(ip);
+  if (rec && rec.until > Date.now()) {
+    return res.status(429).json({ error: "登录尝试过多，请 15 分钟后再试。" });
+  }
+  const username = String(req.body?.username ?? "").trim();
+  const password = String(req.body?.password ?? "");
+  if (!username || !password) return res.status(400).json({ error: "请输入用户名和密码。" });
+
+  const users = await readUsers();
+  const user = users.find((u) => u.username.toLowerCase() === username.toLowerCase());
+  const ok = !!user && user.enabled !== false && checkPassword(password, user);
+
+  if (!ok) {
+    const count = (rec?.count || 0) + 1;
+    loginFails.set(ip, { count, until: count >= MAX_FAILS ? Date.now() + LOCK_MS : 0 });
+    return res.status(401).json({ error: "用户名或密码不对。" });
+  }
+
+  loginFails.delete(ip);
+  user.lastLoginAt = new Date().toISOString();
+  await writeUsers(users);
+  setSessionCookie(res, issueSession(user));
+  res.json({ user: publicUser(user) });
+});
+
+app.post("/api/auth/logout", (_req, res) => {
+  clearSessionCookie(res);
+  res.json({ ok: true });
+});
+
+app.get("/api/auth/me", async (req, res) => {
+  const user = await currentUser(req);
+  if (!user) return res.status(401).json({ error: "未登录" });
+  res.json({ user: publicUser(user) });
+});
+
+app.post("/api/auth/password", requireAuth, async (req, res) => {
+  const oldPw = String(req.body?.oldPassword ?? "");
+  const newPw = String(req.body?.newPassword ?? "");
+  if (newPw.length < 6) return res.status(400).json({ error: "新密码至少 6 位。" });
+  if (oldPw === newPw) return res.status(400).json({ error: "新密码不能和原密码相同。" });
+  const users = await readUsers();
+  const user = users.find((u) => u.username === req.user.username);
+  if (!user || !checkPassword(oldPw, user)) return res.status(400).json({ error: "原密码不对。" });
+  const { salt, hash } = makePasswordHash(newPw);
+  user.salt = salt;
+  user.hash = hash;
+  user.mustChangePassword = false;
+  await writeUsers(users);
+  setSessionCookie(res, issueSession(user));
+  res.json({ ok: true });
+});
+
+/* ---------- 成员账号管理（仅管理员） ---------- */
+
+app.get("/api/users", requireAdmin, async (_req, res) => {
+  const users = await readUsers();
+  res.json({ users: users.map(publicUser) });
+});
+
+app.post("/api/users", requireAdmin, async (req, res) => {
+  const username = String(req.body?.username ?? "").trim();
+  const password = String(req.body?.password ?? "");
+  const name = String(req.body?.name ?? "").trim();
+  const role = req.body?.role === "admin" ? "admin" : "member";
+  if (!/^[A-Za-z0-9_.-]{3,24}$/.test(username)) {
+    return res.status(400).json({ error: "用户名 3-24 位，只能用字母、数字和 _ . -" });
+  }
+  if (password.length < 6) return res.status(400).json({ error: "初始密码至少 6 位。" });
+  const users = await readUsers();
+  if (users.some((u) => u.username.toLowerCase() === username.toLowerCase())) {
+    return res.status(409).json({ error: "用户名已存在。" });
+  }
+  const { salt, hash } = makePasswordHash(password);
+  const user = { username, name: name || username, role, salt, hash, enabled: true, mustChangePassword: true, createdAt: new Date().toISOString() };
+  users.push(user);
+  await writeUsers(users);
+  res.status(201).json({ user: publicUser(user) });
+});
+
+app.patch("/api/users/:username", requireAdmin, async (req, res) => {
+  const users = await readUsers();
+  const user = users.find((u) => u.username === req.params.username);
+  if (!user) return res.status(404).json({ error: "找不到该账号。" });
+  const b = req.body ?? {};
+
+  if (b.password !== undefined) {
+    const pw = String(b.password);
+    if (pw.length < 6) return res.status(400).json({ error: "密码至少 6 位。" });
+    const { salt, hash } = makePasswordHash(pw);
+    user.salt = salt;
+    user.hash = hash;
+    user.mustChangePassword = true;
+  }
+  if (b.name !== undefined) user.name = String(b.name).trim() || user.username;
+
+  if (b.role !== undefined) {
+    const nextRole = b.role === "admin" ? "admin" : "member";
+    if (user.role === "admin" && nextRole !== "admin") {
+      const admins = users.filter((u) => u.role === "admin" && u.enabled !== false);
+      if (admins.length <= 1) return res.status(400).json({ error: "至少要保留一个管理员。" });
+    }
+    user.role = nextRole;
+  }
+  if (b.enabled !== undefined) {
+    if (user.username === req.user.username && !b.enabled) {
+      return res.status(400).json({ error: "不能停用自己。" });
+    }
+    user.enabled = !!b.enabled;
+  }
+  await writeUsers(users);
+  res.json({ user: publicUser(user) });
+});
+
+app.delete("/api/users/:username", requireAdmin, async (req, res) => {
+  const users = await readUsers();
+  const target = users.find((u) => u.username === req.params.username);
+  if (!target) return res.status(404).json({ error: "找不到该账号。" });
+  if (target.username === req.user.username) return res.status(400).json({ error: "不能删除自己。" });
+  const admins = users.filter((u) => u.role === "admin" && u.enabled !== false);
+  if (target.role === "admin" && admins.length <= 1) {
+    return res.status(400).json({ error: "至少要保留一个管理员。" });
+  }
+  await writeUsers(users.filter((u) => u.username !== target.username));
+  res.json({ ok: true });
+});
 app.get("/api/schedule", async (_req, res) => {
   try {
     const items = await readScheduleItems();
@@ -252,7 +471,7 @@ app.get("/api/schedule", async (_req, res) => {
 
 const SCHEDULE_STATUSES = ["待接单", "制作中", "已交付"];
 
-app.post("/api/schedule", requireAdmin, async (req, res) => {
+app.post("/api/schedule", requireAuth, async (req, res) => {
   const b = req.body ?? {};
   const title = String(b.title ?? "").trim();
   const start = String(b.start ?? "").trim();
@@ -277,7 +496,7 @@ app.post("/api/schedule", requireAdmin, async (req, res) => {
   res.status(201).json({ item });
 });
 
-app.patch("/api/schedule/:id", requireAdmin, async (req, res) => {
+app.patch("/api/schedule/:id", requireAuth, async (req, res) => {
   const items = await readScheduleItems();
   const item = items.find((i) => i.id === req.params.id);
   if (!item) return res.status(404).json({ error: "找不到该排期。" });
@@ -294,7 +513,7 @@ app.patch("/api/schedule/:id", requireAdmin, async (req, res) => {
   res.json({ item });
 });
 
-app.delete("/api/schedule/:id", requireAdmin, async (req, res) => {
+app.delete("/api/schedule/:id", requireAuth, async (req, res) => {
   const items = await readScheduleItems();
   const next = items.filter((i) => i.id !== req.params.id);
   if (next.length === items.length) return res.status(404).json({ error: "找不到该排期。" });
@@ -306,7 +525,7 @@ app.get("/api/cycles", (_req, res) => {
   res.json(readCycles());
 });
 
-app.get("/api/orders", requireAdmin, async (_req, res) => {
+app.get("/api/orders", requireAuth, async (_req, res) => {
   const list = await readOrders();
   list.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
   res.json({ orders: list });
@@ -360,7 +579,7 @@ app.post("/api/orders", upload.array("files", 6), async (req, res) => {
 
 const STATUSES = ["待接单", "制作中", "已交付", "已拒绝"];
 
-app.patch("/api/orders/:id", requireAdmin, async (req, res) => {
+app.patch("/api/orders/:id", requireAuth, async (req, res) => {
   const list = await readOrders();
   const order = list.find((o) => o.id === req.params.id);
   if (!order) return res.status(404).json({ error: "找不到该订单。" });
@@ -414,6 +633,5 @@ app.listen(PORT, "0.0.0.0", () => {
   console.log(`  排期表数据: data/schedule.json  (在网页「排期管理」里增删改)`);
   console.log(`  约稿订单:   data/orders.json`);
   console.log(`  顾客素材:   uploads/`);
-  console.log(`\n  内部看板口令: ${ADMIN_KEY}`);
-  console.log(`  (保存在 data/admin-key.txt；想固定它就用环境变量 ADMIN_PASSWORD 启动)\n`);
+  console.log(`\n  内部看板：使用账号登录（首次部署请先运行 node scripts/user.js add 用户名 密码 admin）\n`);
 });

@@ -265,7 +265,7 @@ h1{font-size:29px;line-height:1.22;margin:0 0 6px;letter-spacing:-.028em;font-we
 .field label{display:block;font-size:12.5px;font-weight:580;margin-bottom:6px;letter-spacing:.01em}
 .field label .req{color:var(--accent);margin-left:2px}
 .field .hint{font-size:12.5px;color:var(--muted);margin-top:6px}
-input[type=text],input[type=date],input[type=tel],textarea,select{
+input[type=text],input[type=password],input[type=date],input[type=tel],textarea,select{
   width:100%;padding:10px 13px;border:1px solid var(--line-2);border-radius:var(--r-xs);background:rgba(255,255,255,.82);
   font:inherit;font-size:14px;color:var(--ink);outline:none;
   transition:border-color var(--fast) var(--ease), box-shadow var(--fast) var(--ease), background var(--fast) var(--ease);
@@ -525,7 +525,7 @@ textarea{resize:vertical;min-height:96px;line-height:1.6}
   .card{padding:20px 17px}
   .pick{grid-template-columns:1fr}
   /* iOS 上输入框小于 16px 会自动放大页面 */
-  input[type=text],input[type=date],input[type=tel],textarea,select{font-size:16px}
+  input[type=text],input[type=password],input[type=date],input[type=tel],textarea,select{font-size:16px}
   .chips label{padding:9px 15px;min-height:38px;display:inline-flex;align-items:center}
   .btn{padding:11px 18px;min-height:42px}
   .ocard .ops button{padding:8px 14px;min-height:38px}
